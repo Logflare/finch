@@ -143,7 +143,22 @@ defmodule Finch.PoolManager do
     |> Map.get(shp, default)
     |> maybe_drop_tls_options(shp)
     |> maybe_add_hostname(shp)
+    |> maybe_update_count(shp)
   end
+
+  defp maybe_update_count(%{count: count, mod: Finch.HTTP2.Pool} = config, {scheme, host, port}) do
+    with {:ok, conn} <- Mint.HTTP2.connect(scheme, host, port) do
+      max_concurrent_streams =
+        Mint.HTTP2.get_server_setting(conn, :max_concurrent_streams) || count
+
+      count = min(count, max_concurrent_streams)
+      Map.put(config, :count, count)
+    else
+      _ -> config
+    end
+  end
+
+  defp maybe_update_count(config, _), do: config
 
   # Drop TLS options from :conn_opts for default pools with :http scheme,
   # otherwise you will get :badarg error from :gen_tcp
